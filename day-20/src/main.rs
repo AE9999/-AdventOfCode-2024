@@ -10,7 +10,6 @@ fn main() -> io::Result<()> {
 
     let problem = read_input(input)?;
     solve(&problem, 2, 100);
-    solve(&problem, 20, 100);
     Ok(())
 }
 
