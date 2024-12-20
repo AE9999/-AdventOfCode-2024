@@ -1,5 +1,5 @@
 use std::cmp::{min, Ordering};
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::io::{self, BufReader, BufRead};
 use std::env;
@@ -16,7 +16,7 @@ fn main() -> io::Result<()> {
 fn solve(problem: &Problem, distance_cheat: usize, minimal_improvement: usize)  {
     let shortest_points: HashMap<Point, Option<usize>> =
         problem.iter_points().fold(HashMap::new(), |mut acc, point| {
-        acc.insert(point.clone(), solve_without_cheating(problem, &point));
+        acc.insert(point.clone(), solve_without_cheating(problem, &point, &problem.end_point()));
         acc
     });
 
@@ -26,9 +26,7 @@ fn solve(problem: &Problem, distance_cheat: usize, minimal_improvement: usize)  
                         minimal_improvement);
 }
 
-fn solve_without_cheating(problem: &Problem, start_pos: &Point) -> Option<usize> {
-
-    let end_pos = problem.end_point();
+fn solve_without_cheating(problem: &Problem, start_pos: &Point, end_pos: &Point) -> Option<usize> {
 
     if problem.get_char_on_point(start_pos) == Some('#') {
         return None
@@ -48,7 +46,7 @@ fn solve_without_cheating(problem: &Problem, start_pos: &Point) -> Option<usize>
         let location = state.position.clone();
         let path_len = state.length.clone();
 
-        if location == end_pos {
+        if &location == end_pos {
             if lb.is_none() {
                 lb = Some(path_len);
             }
@@ -235,46 +233,50 @@ impl Problem {
         self.iter_points().find(|p| self.get_char_on_point(p) == Some('E')).unwrap()
     }
 
+    fn find_all_cheats_from_a_point(&self, origin_point: &Point, max_distance: usize) -> Vec<Point> {
 
-    fn find_all_cheats_from_a_point(&self, point: &Point, max_distance: usize) -> Vec<Point> {
-        let mut results = Vec::new();
+        let mut queue: VecDeque<(Vec<Point>, Direction)> = VecDeque::new();
+        let mut candidates : Vec<Vec<Point>> = Vec::new();
 
-        // Up and Right
-        for dx in 0..=max_distance as i32 {
-            for dy in 0..=(max_distance as i32 - dx) {
-                results.push(Point::new(point.x + dx, point.y + dy));
+        queue.push_back((vec![origin_point.clone()], Direction::North));
+        queue.push_back((vec![origin_point.clone()], Direction::South));
+        queue.push_back((vec![origin_point.clone()], Direction::West));
+        queue.push_back((vec![origin_point.clone()], Direction::East));
+
+        while let Some((points, direction)) = queue.pop_front() {
+            let next_point = points.last().unwrap().clone().add(&direction.to_dx_dy());
+
+            let is_a_possible_cheat =
+                self.is_on_map(&next_point)
+                && { let res = solve_without_cheating(self, origin_point, &next_point);
+                     res.is_none() || res.unwrap() > next_point.distance(origin_point) };
+
+            if !is_a_possible_cheat {
+                continue;
             }
-        }
 
-        // Up and Left
-        for dx in 0..=max_distance as i32 {
-            for dy in 0..=(max_distance as i32 - dx) {
-                results.push(Point::new(point.x - dx, point.y + dy));
-            }
-        }
+            let mut next = points.clone();
+            next.push(next_point.clone());
+            candidates.push(next.clone());
 
-        // Down and Left
-        for dx in 0..=max_distance as i32 {
-            for dy in 0..=(max_distance as i32 - dx) {
-                results.push(Point::new(point.x - dx, point.y - dy));
-            }
-        }
-
-        // Down and Right
-        for dx in 0..=max_distance as i32 {
-            for dy in 0..=(max_distance as i32 - dx) {
-                results.push(Point::new(point.x + dx, point.y - dy));
+            if candidates.len() < max_distance {
+                direction.others().iter().for_each(|direction| {
+                    queue.push_back((next.clone(), direction.clone()));
+                })
             }
         }
 
         let r: HashSet<Point> =
-            results.into_iter().filter(|p|
-                p != point
-                    && self.is_on_map(p)
-                    && self.get_char_on_point(p) != Some('#')).collect();
+            candidates.into_iter()
+                   .filter(|p|
+                        self.get_char_on_point(p.last().unwrap()).unwrap() != '#'
+                        && (p.len() < 2 || self.get_char_on_point(&p[p.len() - 2]).unwrap() == '#'))
+                .map(|p| p.last().unwrap().clone())
+                .collect();
 
         let r = r.into_iter().collect();
-        println!("point: {:?} => {:?}", point, r);
+
+
 
         r
     }
@@ -331,6 +333,23 @@ impl Direction {
             Direction::South => Point::new(0, -1),
             Direction::East => Point::new(1, 0),
             Direction::West => Point::new(-1, 0),
+        }
+    }
+
+    fn others(&self) -> Vec<Direction> {
+        match self {
+            Direction::North => {
+                vec![Direction::East, Direction::South, Direction::West]
+            },
+            Direction::East => {
+                vec![Direction::North, Direction::South, Direction::West]
+            },
+            Direction::South => {
+                vec![Direction::North, Direction::East, Direction::West]
+            },
+            Direction::West => {
+                vec![Direction::North, Direction::East, Direction::South]
+            },
         }
     }
 }
